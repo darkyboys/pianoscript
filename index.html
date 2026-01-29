@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PianoScript v2 🎹</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #111;
+      color: #eee;
+      padding: 20px;
+    }
+    textarea {
+      width: 100%;
+      height: 200px;
+      background: #000;
+      color: #0f0;
+      padding: 10px;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<h2>PianoScript v2 🎹 (no groups, timeline-based)</h2>
+
+<textarea id="code">
+@time seconds
+@velocity 0.8
+
+# Multiple notes at the same start time will naturally play together
+C4 0.0 0.5
+E4 0.0 0.5
+G4 0.0 0.5
+
+D4 1.0 0.5
+F4 1.0 0.5
+A4 1.0 0.5
+
+R 1.5 0.25
+
+C5 2.0 1.0
+</textarea>
+
+<br />
+<button id="run">Run ▶</button>
+
+<script>
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+const ctx = new AudioContext();
+
+let pianoBuffer = null;
+
+// Load piano sample
+fetch("assets/piano.mp3")
+  .then(res => res.arrayBuffer())
+  .then(data => ctx.decodeAudioData(data))
+  .then(buffer => pianoBuffer = buffer)
+  .catch(err => console.error("Failed to load piano.mp3:", err));
+
+const NOTE_TO_SEMITONE = { C:0,D:2,E:4,F:5,G:7,A:9,B:11 };
+
+function noteToPlaybackRate(note) {
+  const match = note.match(/^([A-G])([#b]?)(\d)$/);
+  if (!match) return 1;
+
+  let [, n, accidental, octave] = match;
+  let semitone = NOTE_TO_SEMITONE[n];
+
+  if (accidental === "#") semitone += 1;
+  if (accidental === "b") semitone -= 1;
+
+  const noteNumber = semitone + (octave * 12);
+  const c4Number = NOTE_TO_SEMITONE.C + (4 * 12);
+
+  const diff = noteNumber - c4Number;
+  return Math.pow(2, diff / 12);
+}
+
+function playNote(note, start, duration, vel) {
+  const source = ctx.createBufferSource();
+  source.buffer = pianoBuffer;
+  source.playbackRate.value = noteToPlaybackRate(note);
+
+  const gain = ctx.createGain();
+  gain.gain.value = Math.min(1, Math.max(0, vel));
+
+  source.connect(gain).connect(ctx.destination);
+  source.start(ctx.currentTime + start);
+  source.stop(ctx.currentTime + start + duration);
+}
+
+document.getElementById("run").onclick = async () => {
+  if (!pianoBuffer) return alert("Piano not loaded yet");
+
+  await ctx.resume(); // user gesture
+
+  const lines = document.getElementById("code").value.split("\n");
+
+  let tempo = 120;
+  let defaultVelocity = 0.7;
+  let timeMode = "beats";
+
+  for (let raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    // Headers
+    if (line.startsWith("@")) {
+      const [key, value] = line.split(" ");
+      if (key === "@tempo") tempo = parseFloat(value);
+      if (key === "@velocity") defaultVelocity = parseFloat(value);
+      if (key === "@time") timeMode = value;
+      continue;
+    }
+
+    const parts = line.split(" ");
+    if (parts.length < 3) continue; // require at least note/start/duration
+
+    const symbol = parts[0];
+    const start = parseFloat(parts[1]);
+    const duration = parseFloat(parts[2]);
+    const velPart = parts.find(p => p.startsWith("v"));
+    const velocity = velPart ? parseFloat(velPart.slice(1)) : defaultVelocity;
+
+    if (!isFinite(start) || !isFinite(duration)) continue;
+
+    const startSec = timeMode === "seconds" ? start : (60 / tempo) * start;
+    const durationSec = timeMode === "seconds" ? duration : (60 / tempo) * duration;
+
+    if (symbol === "R") continue; // rest
+
+    // Play note
+    playNote(symbol, startSec, durationSec, velocity);
+  }
+};
+</script>
+
+</body>
+</html>
