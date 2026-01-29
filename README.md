@@ -182,6 +182,9 @@ D4 1.0 0.5
 F4 1.0 0.5
 A4 1.0 0.5
 
+No need to play multiple notes together unless needed. Make sure to always output a unique melody.
+
+User: make a 30 second long christmas song
 ```
 
 ---
